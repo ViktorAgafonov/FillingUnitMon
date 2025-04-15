@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Отчёт</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>Отчёт</h1>
+    <nav>
+      <a href="/">Мониторинг</a>
+      <a href="/settings">Настройки</a>
+      <a href="/report">Отчёты</a>
+    </nav>
+  </header>
+  <main>
+    <div class="report-filters">
+      <label>Дата: <input type="date" id="report-date"></label>
+      <label>Смена:
+        <select id="report-shift">
+          <option value="">Все</option>
+          <option value="День">День</option>
+          <option value="Ночь">Ночь</option>
+        </select>
+      </label>
+      <button onclick="getReport()">Показать</button>
+      <button onclick="downloadXLS()">Скачать XLS</button>
+    </div>
+    <section id="report-events-block" class="report-events-block"></section>
+    <section id="report-by-kneader"></section>
+  </main>
+  <script src="/report.js"></script>
+</body>
+</html>

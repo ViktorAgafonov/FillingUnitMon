@@ -1,0 +1,5 @@
+[
+  { "name": "Буханка", "minWeight": 20, "maxWeight": 25 },
+  { "name": "Батон", "minWeight": 26, "maxWeight": 32 },
+  { "name": "Ржаной", "minWeight": 33, "maxWeight": 40 }
+]

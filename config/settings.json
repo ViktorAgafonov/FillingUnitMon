@@ -1,0 +1,17 @@
+{
+  "modbus": {
+    "type": "tcp",
+    "poolingTime": 150,
+    "com": {
+      "port": "COM1",
+      "baudRate": 9600,
+      "dataBits": 8,
+      "parity": "none",
+      "stopBits": 1
+    },
+    "tcp": {
+      "host": "127.0.0.1",
+      "port": 5020
+    }
+  }
+}

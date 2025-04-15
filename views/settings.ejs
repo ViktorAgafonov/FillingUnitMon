@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Настройки тестомесов и рецептов</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header style="display:flex;align-items:center;justify-content:space-between;gap:24px;padding:0 24px;">
+    <h1 style="margin:0;font-size:2em;color:#2c3e50;">Настройки</h1>
+    <nav style="display:flex;gap:24px;align-items:center;">
+      <a href="/">Мониторинг</a>
+      <a href="/settings">Настройки</a>
+      <a href="/report">Отчёты</a>
+    </nav>
+  </header>
+  <main>
+    <section>
+      <h2>Тестомесы</h2>
+      <div id="kneaders-settings-cards" class="kneaders-cards"></div>
+      <div class="settings-actions">
+        <button id="add-kneader-btn">Добавить тестомес</button>
+      </div>
+      <div id="settings-message" class="settings-message"></div>
+    </section>
+    <section>
+      <h2>Рецепты</h2>
+      <div class="recipes-cards" id="recipes-settings-block"></div>
+      <div class="settings-actions">
+        <button id="add-recipe-btn">Добавить рецепт</button>
+      </div>
+      <div id="recipes-message" class="settings-message"></div>
+    </section>
+  </main>
+  <script src="/settings.js"></script>
+  <script src="/recipes.js"></script>
+</body>
+</html>
