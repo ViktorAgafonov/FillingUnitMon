@@ -262,5 +262,71 @@
     "shift": "Ночь",
     "date": "2025-04-15",
     "hour": 1
+  },
+  {
+    "kneader": "Тестомес 1",
+    "address": 101,
+    "weight": 50,
+    "recipeWeight": 50,
+    "recipeName": "без рецепта",
+    "timestamp": "2025-04-15T22:52:06.159Z",
+    "shift": "Ночь",
+    "date": "2025-04-15",
+    "hour": 1
+  },
+  {
+    "kneader": "Тестомес 2",
+    "address": 102,
+    "weight": 50,
+    "recipeWeight": 50,
+    "recipeName": "без рецепта",
+    "timestamp": "2025-04-15T22:52:06.364Z",
+    "shift": "Ночь",
+    "date": "2025-04-15",
+    "hour": 1
+  },
+  {
+    "kneader": "Тестомес 3",
+    "address": 103,
+    "weight": 50,
+    "recipeWeight": 50,
+    "recipeName": "без рецепта",
+    "timestamp": "2025-04-15T22:52:06.569Z",
+    "shift": "Ночь",
+    "date": "2025-04-15",
+    "hour": 1
+  },
+  {
+    "kneader": "Тестомес 4",
+    "address": 104,
+    "weight": 50,
+    "recipeWeight": 50,
+    "recipeName": "без рецепта",
+    "timestamp": "2025-04-15T22:52:06.776Z",
+    "shift": "Ночь",
+    "date": "2025-04-15",
+    "hour": 1
+  },
+  {
+    "kneader": "Тестомес 5",
+    "address": 105,
+    "weight": 50,
+    "recipeWeight": 50,
+    "recipeName": "без рецепта",
+    "timestamp": "2025-04-15T22:52:06.979Z",
+    "shift": "Ночь",
+    "date": "2025-04-15",
+    "hour": 1
+  },
+  {
+    "kneader": "Тестомес 6",
+    "address": 106,
+    "weight": 50,
+    "recipeWeight": 50,
+    "recipeName": "без рецепта",
+    "timestamp": "2025-04-15T22:52:07.186Z",
+    "shift": "Ночь",
+    "date": "2025-04-15",
+    "hour": 1
   }
 ]

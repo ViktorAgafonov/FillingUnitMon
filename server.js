@@ -14,9 +14,13 @@ app.use(bodyParser.json());
 require('./routes/api')(app);
 require('./routes/web')(app);
 
-// Запуск опроса Modbus
-require('./modbus/poller');
+// Запуск опроса Modbus с обработкой ошибок
+try {
+  require('./modbus/poller');
+} catch (error) {
+  console.error('Ошибка при запуске модуля опроса:', error);
+}
 
 app.listen(PORT, () => {
-  console.log(`Server started on http://localhost:${PORT}`);
+  // Сервер запущен без логирования
 });

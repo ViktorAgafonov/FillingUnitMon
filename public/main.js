@@ -46,7 +46,7 @@ async function initData() {
     // Начальное отображение карточек
     renderKneaderCards(kneaderSettings, archiveData, recipes);
   } catch (error) {
-    console.error('Ошибка загрузки данных:', error);
+    // Ошибка загрузки данных
   }
 }
 
@@ -63,6 +63,7 @@ function connectToEventSource() {
   // Обработка полученных данных
   eventSource.onmessage = function(event) {
     try {
+      // Обработка входящих данных из SSE
       // Обновление текущих данных
       currentKneaders = JSON.parse(event.data);
       
@@ -74,13 +75,13 @@ function connectToEventSource() {
         renderKneaderCards(kneaderSettings, archiveData, recipes);
       });
     } catch (error) {
-      console.error('Ошибка обработки SSE-данных:', error);
+      // Ошибка обработки SSE-данных
     }
   };
   
   // Обработка ошибок
   eventSource.onerror = function(error) {
-    console.error('Ошибка SSE-соединения:', error);
+    // Ошибка SSE-соединения
     // Попытка переподключения через 3 секунды
     setTimeout(connectToEventSource, 3000);
   };
@@ -155,23 +156,39 @@ function renderKneaderCards(kneaders, archive, recipes) {
     const recs = archive.filter(a => a.address === kn.modbusAddress);
     // Последнее событие для отображения актуального состояния
     const last = recs.length ? recs[recs.length-1] : undefined;
-    const stats = calcStats(recs);
-    const shifts = shiftStats(recs);
-    // Для имитации статуса подключения и времени ответа (реальные данные — через сервер)
-    // Считаем, что "нет связи" если явно есть ошибка или нет данных
-    const connected = last && last.connected !== undefined ? last.connected : (!last || !last.error);
-    // Если нет связи, вес должен быть undefined
-    const showWeight = connected && last && last.currentWeight !== undefined ? last.currentWeight : undefined;
+    // Поиск live-данных
+    const live = currentKneaders.find(k => k.address === kn.modbusAddress);
+    // Определяем состояние связи (важно: внутри области видимости forEach!)
+    let connected = false;
+    if (live && typeof live.connected !== 'undefined') {
+      connected = live.connected;
+    } else if (last && typeof last.connected !== 'undefined') {
+      connected = last.connected;
+    }
+    // Текущий вес только из live-данных
+    let showWeight = undefined;
+    if (live && live.currentWeight !== undefined) {
+      showWeight = live.currentWeight;
+    } else {
+      showWeight = undefined; // Нет данных — не брать из архива!
+    }
+
     const responseTime = last && last.responseTime ? last.responseTime : Math.round(Math.random()*30+20);
     // Определяем рецепт по рецептурному весу, а не по текущему
     const recipeName = last && last.recipeWeight ? getRecipeName(last.recipeWeight, recipes) : '';
+    
+    // Вычисляем статистику по тестомесу
+    const stats = calcStats(recs);
+    // Вычисляем статистику по сменам
+    const shifts = shiftStats(recs);
     const card = document.createElement('div');
+    // Используем connected только после его явного определения
     card.className = 'kneader-card ' + (connected ? 'connected' : 'disconnected'); // Цветовая индикация
     card.innerHTML = `
       <h2>${kn.name} <span style="font-size:0.8em;color:#888">(адр. ${kn.modbusAddress})</span></h2>
       <div class="status ${connected ? '' : 'disconnected'}">${connected ? 'Подключен' : 'Нет связи'}</div>
       <div class="recipe">${recipeName ? 'Рецепт: ' + recipeName : ''}</div>
-      <div class="stat-row"><span class="stat-label">Текущий вес:</span><span class="stat-value">${showWeight !== undefined ? showWeight : '<span style="color:#c00">-</span>'}</span></div>
+      <div class="stat-row"><span class="stat-label">Текущий вес:</span><span class="stat-value">${showWeight !== undefined ? showWeight : '<span style=\"color:#c00\">Нет данных</span>'}</span></div> <!-- если данные не пришли, явно пишем -->
       <div class="stat-row"><span class="stat-label">Рецептурный вес:</span><span class="stat-value">${last && last.recipeWeight ? last.recipeWeight : '-'}</span></div>
       <div class="stat-row"><span class="stat-label">Готовность:</span><span class="stat-value">${last && last.ready !== undefined ? last.ready : '-'}</span></div>
       <div class="stat-row"><span class="stat-label">Время последнего взвешивания:</span><span class="stat-value">${last && last.timestamp ? last.timestamp.replace('T',' ').slice(0,19) : '-'}</span></div>

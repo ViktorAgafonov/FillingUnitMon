@@ -7,7 +7,6 @@ const path = require('path');
 
 // Пути к файлам настроек
 const kneadersPath = path.join(__dirname, '../config/kneaders.json');
-const archivePath = path.join(__dirname, '../data/archive.json');
 const recipesPath = path.join(__dirname, '../data/recipes.json');
 const settingsPath = path.join(__dirname, '../config/settings.json');
 
@@ -23,8 +22,7 @@ let connected = false;
 async function connectModbus() {
   try {
     if (!connected) {
-      console.log(`[Подключение Modbus] Тип: ${settings.modbus.type}`);
-      
+      console.log(`[Подключение Modbus] Попытка подключения: ${settings.modbus.type}`);
       if (settings.modbus.type === 'tcp') {
         console.log(`[Подключение Modbus] TCP к ${settings.modbus.tcp.host}:${settings.modbus.tcp.port}`);
         await client.connectTCP(settings.modbus.tcp.host, { port: settings.modbus.tcp.port });
@@ -43,7 +41,7 @@ async function connectModbus() {
   } catch (error) {
     connected = false;
     console.error(`[Ошибка Modbus] Не удалось подключиться: ${error.message}`);
-    throw error; // Перебрасываем ошибку дальше
+    // Не перебрасываем ошибку, чтобы не прерывать работу сервера
   }
 }
 
@@ -259,19 +257,11 @@ function archiveEvent(kn, factWeight, recipeName = '') {
   // Сохраняем файл
   fs.writeFileSync(dailyArchivePath, JSON.stringify(archive, null, 2));
   
-  // Также сохраняем в общий архив для обратной совместимости
-  try {
-    let generalArchive = [];
-    if (fs.existsSync(archivePath)) {
-      const data = fs.readFileSync(archivePath, 'utf8');
-      generalArchive = JSON.parse(data);
-    }
-    
-    generalArchive.push(archive[archive.length - 1]);
-    fs.writeFileSync(archivePath, JSON.stringify(generalArchive, null, 2));
-  } catch (e) {
-    console.error(`[Ошибка] При обновлении общего архива: ${e.message}`);
-  }
+  // Больше не сохраняем в общий архив, чтобы избежать дублирования
+  // Все данные теперь хранятся только в файлах по датам (archive_YYYY-MM-DD.json)
+  console.log(`[Архив] Событие сохранено в файл ${dailyArchivePath}`);
+  
+  // При необходимости можно добавить миграцию данных из общего архива в файлы по датам
 }
 
 // Функция для определения названия рецепта по весу
@@ -341,12 +331,15 @@ function getOptimalDeviceDelay(unitId) {
   // Минимальная задержка - 20 мс, максимальная - 100 мс
   return Math.min(Math.max(avgTime / 10, 20), 100);
 }
-
 // Основной цикл опроса
 async function pollAll() {
   try {
     // Перезагрузка настроек при каждом цикле
-    kneaders = JSON.parse(fs.readFileSync(kneadersPath, 'utf8')).kneaders;
+    try {
+      kneaders = JSON.parse(fs.readFileSync(kneadersPath, 'utf8')).kneaders;
+    } catch (configError) {
+      console.error(`[Ошибка] Не удалось загрузить настройки тестомесов:`, configError.message);
+    }
     
     // Если соединение потеряно, пробуем переподключиться
     if (!connected) {
@@ -432,8 +425,6 @@ async function pollAll() {
             connected: true,
             responseTime: res.responseTime || 0 // Без pollDuration, если он не определён
           };
-          // Логируем обновление currentStates
-          console.log(`[DEBUG] Обновлён currentStates для ${kn.name}: currentWeight=${safeCurrentWeight}, recipeWeight=${safeRecipeWeight}, ready=${safeReady}`);
           
           // Проверяем событие дозации по новому алгоритму
           // 1. Если вес приблизился к рецептурному (в пределах 0.1%)
@@ -494,10 +485,9 @@ async function pollAll() {
               recipeWeight: safeRecipeWeight
             }, safeWeight, recipeName);
             
-            // Сбрасываем состояние дозации и логируем
+            // Сбрасываем состояние дозации
             dosingState.reachedThreshold = false;
             dosingState.maxWeight = 0;
-            console.log(`[DEBUG] Сброс состояния дозации для ${kn.name}`);
           }
           
           // Традиционный способ фиксации события (для обратной совместимости)
@@ -512,9 +502,6 @@ async function pollAll() {
           
           // Сохраняем текущее состояние
           lastStates[kn.modbusAddress] = { currentWeight: res.currentWeight, ready: res.ready };
-
-          // Логируем текущее состояние
-          console.log(`[DEBUG] Текущее состояние ${kn.name}: currentWeight=${res.currentWeight}, recipeWeight=${res.recipeWeight}, ready=${res.ready}`);
         }
       } catch (knError) {
         if (errorCounter < MAX_ERRORS_TO_SHOW) {
@@ -546,13 +533,26 @@ const basePollingInterval = settings.modbus.poolingTime || 5000; // Исполь
 // Функция для адаптивного опроса с учетом времени выполнения
 async function adaptivePolling() {
   let lastPollTime = Date.now();
+  let currentInterval = basePollingInterval;
+  
   let consecutiveSuccessfulPolls = 0; // Счетчик успешных опросов подряд
   let consecutiveErrorPolls = 0; // Счетчик ошибочных опросов подряд
   
+  // Бесконечный цикл опроса с обработкой ошибок
   while (true) {
     try {
-      // Запуск опроса
-      await pollAll();
+      // Запуск опроса с обработкой ошибок
+      try {
+        await pollAll();
+        // Успешный опрос
+        consecutiveSuccessfulPolls++;
+        consecutiveErrorPolls = 0;
+      } catch (pollError) {
+        // Ошибка при опросе
+        console.error(`[Ошибка опроса] ${pollError.message}`);
+        consecutiveErrorPolls++;
+        consecutiveSuccessfulPolls = 0;
+      }
       
       // Вычисляем время, которое занял опрос
       const now = Date.now();
@@ -625,10 +625,9 @@ function ensureDataSaved() {
   try {
     const dataDir = path.join(__dirname, '..', 'data');
     
-    // Создаем папку data, если она не существует
+    // Проверяем существование папки для данных
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
-      console.log(`[Инфо] Создана папка для данных: ${dataDir}`);
     }
     
     // Проверяем и восстанавливаем все файлы архива с датами
@@ -642,8 +641,7 @@ function ensureDataSaved() {
         const data = fs.readFileSync(filePath, 'utf8');
         JSON.parse(data); // Проверка, что это валидный JSON
       } catch (e) {
-        console.error(`[Ошибка] Файл архива ${file} поврежден, создаем резервную копию и новый файл`);
-        
+        // Файл архива поврежден, создаем резервную копию и новый файл
         // Создаем резервную копию поврежденного файла
         const backupPath = `${filePath}.backup.${Date.now()}`;
         fs.copyFileSync(filePath, backupPath);
@@ -659,20 +657,16 @@ function ensureDataSaved() {
     const todayArchivePath = getArchivePathByDate(todayStr);
     
     if (!fs.existsSync(todayArchivePath)) {
+      // Создаем новый файл архива для сегодняшнего дня
       fs.writeFileSync(todayArchivePath, '[]', 'utf8');
-      console.log(`[Инфо] Создан новый файл архива для сегодняшнего дня: ${todayArchivePath}`);
     }
     
-    // Проверяем существование общего файла архива (для обратной совместимости)
-    if (!fs.existsSync(archivePath)) {
-      fs.writeFileSync(archivePath, '[]', 'utf8');
-      console.log(`[Инфо] Создан новый общий файл архива: ${archivePath}`);
-    }
+    // Все данные теперь хранятся только в файлах по датам
     
-    console.log(`[Инфо] Данные успешно сохранены в ${new Date().toISOString()}`);
+    // Данные успешно сохранены
     return true;
   } catch (error) {
-    console.error(`[Ошибка] При сохранении данных: ${error.message}`);
+    // Ошибка при сохранении данных
     return false;
   }
 }
@@ -682,27 +676,26 @@ function setupPeriodicSaving() {
   // Проверяем и сохраняем данные каждый час
   setInterval(() => {
     const now = new Date();
-    console.log(`[Инфо] Запуск периодического сохранения данных в ${now.toISOString()}`);
+    // Периодическое сохранение данных
     ensureDataSaved();
   }, 60 * 60 * 1000); // Каждый час
   
   // Также сохраняем данные при завершении работы приложения
   process.on('SIGINT', () => {
-    console.log('\n[Инфо] Получен сигнал завершения работы, сохраняем данные...');
+    // Получен сигнал завершения работы
     ensureDataSaved();
     process.exit(0);
   });
   
   process.on('SIGTERM', () => {
-    console.log('\n[Инфо] Получен сигнал завершения работы, сохраняем данные...');
+    // Получен сигнал завершения работы
     ensureDataSaved();
     process.exit(0);
   });
   
   // Для обработки необработанных исключений
   process.on('uncaughtException', (err) => {
-    console.error(`\n[Критическая ошибка] Необработанное исключение: ${err.message}`);
-    console.error(err.stack);
+    // Необработанное исключение
     ensureDataSaved();
     process.exit(1);
   });

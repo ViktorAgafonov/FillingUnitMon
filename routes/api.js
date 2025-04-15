@@ -4,7 +4,6 @@ const path = require('path');
 
 // Пути к файлам
 const dataDir = path.join(__dirname, '../data');
-const archivePath = path.join(dataDir, 'archive.json');
 const kneadersPath = path.join(__dirname, '../config/kneaders.json');
 const recipesPath = path.join(__dirname, '../config/recipes.json'); // Вернули путь к файлу рецептов в config
 
@@ -36,6 +35,7 @@ const sseClients = [];
 // Отправка данных всем подключенным клиентам
 function sendDataToAllClients() {
   const states = Object.values(currentStates);
+  // Отправляем данные без логирования
   sseClients.forEach(client => {
     client.res.write(`data: ${JSON.stringify(states)}\n\n`);
   });
@@ -80,26 +80,64 @@ module.exports = function(app) {
   // Получить архив: агрегировать все архивные файлы (archive_YYYY-MM-DD.json)
   app.get('/api/archive', async (req, res) => {
     try {
+      // Проверяем существование папки данных
+      if (!fs.existsSync(dataDir)) {
+        console.log(`[Архив] Папка данных не существует: ${dataDir}`);
+        // Создаем папку данных
+        fs.mkdirSync(dataDir, { recursive: true });
+        // Возвращаем пустой массив
+        return res.json([]);
+      }
+
+      // Получаем список файлов
       const files = fs.readdirSync(dataDir);
       const archiveFiles = files.filter(file => file.startsWith('archive_') && file.endsWith('.json'));
+      console.log(`[Архив] Найдено файлов архива: ${archiveFiles.length}`);
+      
       let allData = [];
       for (const file of archiveFiles) {
         const filePath = path.join(dataDir, file);
         try {
+          // Проверяем содержимое файла
           const data = fs.readFileSync(filePath, 'utf8');
-          allData = allData.concat(JSON.parse(data));
+          if (!data || data.trim() === '') {
+            console.log(`[Архив] Файл ${file} пустой, пропускаем`);
+            continue;
+          }
+          
+          // Пробуем распарсить JSON
+          const parsedData = JSON.parse(data);
+          if (Array.isArray(parsedData)) {
+            allData = allData.concat(parsedData);
+            console.log(`[Архив] Добавлено ${parsedData.length} записей из ${file}`);
+          } else {
+            console.log(`[Архив] Файл ${file} не содержит массив, пропускаем`);
+          }
         } catch (e) {
           console.error(`[Ошибка] Не удалось прочитать архив ${file}: ${e.message}`);
+          // Создаем резервную копию поврежденного файла
+          try {
+            const backupPath = `${filePath}.backup.${Date.now()}`;
+            fs.copyFileSync(filePath, backupPath);
+            // Создаем новый пустой файл
+            fs.writeFileSync(filePath, '[]', 'utf8');
+            console.log(`[Архив] Создана резервная копия поврежденного файла ${file}`);
+          } catch (backupError) {
+            console.error(`[Ошибка] Не удалось создать резервную копию: ${backupError.message}`);
+          }
         }
       }
-      // Для обратной совместимости: если нет новых архивов, возвращаем старый общий архив
-      if (!allData.length && fs.existsSync(archivePath)) {
-        const data = fs.readFileSync(archivePath, 'utf8');
-        allData = JSON.parse(data);
-      }
+      
+      // Все данные теперь хранятся только в файлах по датам (archive_YYYY-MM-DD.json)
+      // Общий архив (archive.json) больше не используется
+      
+      // Возвращаем результат
+      console.log(`[Архив] Возвращаем ${allData.length} записей`);
       res.json(allData);
     } catch (e) {
-      res.status(500).json({ error: `Ошибка при получении архива: ${e.message}` });
+      console.error(`[Ошибка] При получении архива: ${e.message}`);
+      // В случае ошибки возвращаем пустой массив
+      res.json([]);
     }
   });
   
@@ -226,7 +264,7 @@ module.exports = function(app) {
     
     // Обработка закрытия соединения
     req.on('close', () => {
-      console.log(`[SSE] Клиент отключился`);
+      // Удаляем клиента из списка без логирования
       const index = sseClients.findIndex(client => client.id === clientId);
       if (index !== -1) {
         sseClients.splice(index, 1);
@@ -274,30 +312,130 @@ module.exports = function(app) {
     });
   });
 
-  // Экспорт отчёта в XLS
+  // Экспорт отчёта в XLS с группировкой по тестомесам
   app.post('/api/report-xls', async (req, res) => {
     const ExcelJS = require('exceljs');
     const data = req.body.data;
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('Отчёт');
-    sheet.columns = [
+    
+    // Создаем лист с общей сводкой
+    const summarySheet = workbook.addWorksheet('Сводка');
+    summarySheet.columns = [
+      { header: 'Тестомес', key: 'kneader', width: 20 },
+      { header: 'Адрес', key: 'address', width: 10 },
+      { header: 'Кол-во дозаций', key: 'count', width: 15 },
+      { header: 'Общий вес (кг)', key: 'totalWeight', width: 15 },
+      { header: 'Средний вес (кг)', key: 'avgWeight', width: 15 }
+    ];
+    
+    // Создаем лист с детальными данными
+    const detailSheet = workbook.addWorksheet('Детали');
+    detailSheet.columns = [
       { header: 'Тестомес', key: 'kneader', width: 20 },
       { header: 'Адрес', key: 'address', width: 10 },
       { header: 'Вес (кг)', key: 'weight', width: 12 },
+      { header: 'Рецептурный вес', key: 'recipeWeight', width: 15 },
+      { header: 'Рецепт', key: 'recipeName', width: 20 },
       { header: 'Дата', key: 'date', width: 14 },
       { header: 'Смена', key: 'shift', width: 10 },
       { header: 'Время', key: 'time', width: 10 }
     ];
+    
+    // Группируем данные по тестомесам
+    const byKneader = {};
+    let totalWeight = 0;
+    let totalDoses = 0;
+    
     data.forEach(r => {
-      sheet.addRow({
+      const kneader = r.kneader || '-';
+      const address = r.address || '-';
+      const key = `${kneader}#${address}`;
+      
+      if (!byKneader[key]) {
+        byKneader[key] = {
+          kneader,
+          address,
+          records: [],
+          totalWeight: 0,
+          count: 0
+        };
+      }
+      
+      // Добавляем запись в группу
+      byKneader[key].records.push(r);
+      
+      // Суммируем вес, если он валидный
+      if (typeof r.weight === 'number' && !isNaN(r.weight)) {
+        byKneader[key].totalWeight += r.weight;
+        byKneader[key].count++;
+        
+        // Добавляем в общую статистику
+        totalWeight += r.weight;
+        totalDoses++;
+      }
+      
+      // Добавляем запись в детальный лист
+      detailSheet.addRow({
         kneader: r.kneader,
         address: r.address,
         weight: r.weight,
+        recipeWeight: r.recipeWeight,
+        recipeName: r.recipeName,
         date: r.date,
         shift: r.shift,
         time: r.timestamp ? r.timestamp.slice(11, 19) : ''
       });
     });
+    
+    // Добавляем строки в сводный лист
+    Object.values(byKneader).forEach(group => {
+      const avgWeight = group.count > 0 ? group.totalWeight / group.count : 0;
+      summarySheet.addRow({
+        kneader: group.kneader,
+        address: group.address,
+        count: group.count,
+        totalWeight: group.totalWeight.toFixed(1),
+        avgWeight: avgWeight.toFixed(2)
+      });
+    });
+    
+    // Добавляем итоговую строку
+    const avgTotalWeight = totalDoses > 0 ? totalWeight / totalDoses : 0;
+    summarySheet.addRow({
+      kneader: 'ИТОГО',
+      address: '',
+      count: totalDoses,
+      totalWeight: totalWeight.toFixed(1),
+      avgWeight: avgTotalWeight.toFixed(2)
+    });
+    
+    // Форматирование итоговой строки
+    const lastRow = summarySheet.lastRow;
+    if (lastRow) {
+      lastRow.eachCell(cell => {
+        cell.font = { bold: true };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFE0F0FF' }
+        };
+      });
+    }
+    
+    // Форматирование заголовков
+    [summarySheet, detailSheet].forEach(sheet => {
+      const headerRow = sheet.getRow(1);
+      headerRow.eachCell(cell => {
+        cell.font = { bold: true };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFD0E0F0' }
+        };
+      });
+    });
+    
+    // Отправляем файл
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename=report.xlsx');
     await workbook.xlsx.write(res);
